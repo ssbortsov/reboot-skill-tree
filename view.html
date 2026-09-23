@@ -167,8 +167,6 @@ body.resizing{cursor:col-resize;user-select:none}
     <div class="hud">
       <div class="card" id="grades"></div>
       <div class="card" id="tracks"><span class="lbl">Трек</span></div>
-      <button id="mine">Мой уровень</button>
-      <button id="growth">Только рост</button>
       <div class="card"><input type="search" id="q" placeholder="Поиск" aria-label="Поиск навыка"></div>
       <button id="fit">Вписать</button>
     </div>
@@ -183,7 +181,7 @@ body.resizing{cursor:col-resize;user-select:none}
       <p id="d"></p>
     </div>
     <div id="body"></div>
-    <div id="foot">Клик по узлу — карточка. Колесо — зум, перетаскивание — панорама. Режим «Мой уровень» — самооценка, сохраняется в браузере.</div>
+    <div id="foot">Клик по узлу — карточка. Колесо — зум, перетаскивание — панорама.</div>
   </aside>
 </div>
 <script>
@@ -202,21 +200,20 @@ var ALL=[],SK={};
 GROUPS.forEach(function(g,gi){g.gi=gi;g.skills.forEach(function(s,i){s.key=s.id;s.g=g;ALL.push(s);SK[s.key]=s;});});
 
 /* ---------- состояние ---------- */
-var PW=360,PH=0,G=0,mine=false,growth=false,sel="core",my={},hidden={},disabled={},edits={skill:{},group:{},grade:{}},track="web",layout=null;
+var PW=360,PH=0,G=0,sel="core",hidden={},disabled={},edits={skill:{},group:{},grade:{}},track="web",layout=null;
 try{var sv=JSON.parse(localStorage.getItem("wdtree-view")||"{}");
-  if(sv.my)my=sv.my;if(typeof sv.G==="number")G=sv.G;if(sv.mine)mine=true;if(sv.track)track=sv.track;if(sv.pw)PW=sv.pw;if(sv.ph)PH=sv.ph;
+  if(typeof sv.G==="number")G=sv.G;if(sv.track)track=sv.track;if(sv.pw)PW=sv.pw;if(sv.ph)PH=sv.ph;
 }catch(e){}
-function save(){try{localStorage.setItem("wdtree-view",JSON.stringify({my:my,G:G,mine:mine,track:track,pw:PW,ph:PH}));}catch(e){}}
+function save(){try{localStorage.setItem("wdtree-view",JSON.stringify({G:G,track:track,pw:PW,ph:PH}));}catch(e){}}
 function vis(list){return list;}
 function clean(v){return v.replace(/[<>]/g,"").replace(/\s+/g," ").trim();}
-function isOff(s){return !!disabled[s.key];}
+function isOff(){return false;}
 var TRACKN={web:"Классический веб",games:"Игры"};
 function specBoth(){return GRADES[G].spec!=="track";}
 function trackOff(s){return !!s.g.track&&!specBoth()&&s.g.track!==track;}
 function counts(s){return !disabled[s.key]&&!trackOff(s);}
 function active(list){return vis(list).filter(counts);}
 function req(s,g){return s.req[g===undefined?G:g];}
-function lvl(s){return my[s.key]||0;}
 
 /* ---------- граф ---------- */
 var nodes,edges,byId,gel;
@@ -333,10 +330,6 @@ function build(){
   svg.setAttribute("viewBox",VB.join(" "));
   applySearch();
 }
-function baseClosed(){
-  var b=GROUPS.filter(function(g){return g.base;})[0];
-  return vis(b.skills).filter(function(x){return !disabled[x.key];}).every(function(x){return lvl(x)>=x.req[0];});
-}
 
 var gbox=document.getElementById("grades");
 GRADES.forEach(function(gr,i){
@@ -356,24 +349,18 @@ function paintTracks(){
 function paintGrades(){Array.prototype.forEach.call(gbox.children,function(b,i){b.classList.toggle("act",i===G);});}
 
 function render(){
-  var lockTrees=mine&&!baseClosed();
   tierBands.forEach(function(b,i){if(b)b.classList.toggle("now",i===G);});
-  gateEls.forEach(function(p){p.classList.toggle("shut",lockTrees);});
+  gateEls.forEach(function(p){p.classList.remove("shut");});
   nodes.forEach(function(n){
     var o=gel[n.id],v,col=gcol(n.gi),txt,off=false;
     if(n.t==="skill"){
       var r=req(n.sk);
-      if(isOff(n.sk)){v=0;txt=String(r);col="var(--faint)";}
-      else if(mine){var m=lvl(n.sk);v=m;txt=m+"/"+r;col=m>=r?"var(--ok)":"var(--lack)";}
-      else{v=r;txt=String(r);}
-      off=(r===0&&!mine)||trackOff(n.sk);
-      if(growth&&G>0&&req(n.sk)<=req(n.sk,G-1))off=true;
-      if(growth&&G===0&&req(n.sk)===0)off=true;
+      v=r;txt=String(r);
+      off=(r===0)||trackOff(n.sk);
     }else{
-      var list=active(n.t==="core"?ALL:n.g.skills),sr=0,sm=0;
-      list.forEach(function(s){sr+=req(s);sm+=Math.min(lvl(s),req(s));});
-      if(mine){v=5*sm/(sr||1);txt=sm+"/"+sr;col=(sr&&sm>=sr)?"var(--ok)":gcol(n.gi);}
-      else{v=list.length?sr/list.length:0;txt=String(sr);}
+      var list=active(n.t==="core"?ALL:n.g.skills),sr=0;
+      list.forEach(function(s){sr+=req(s);});
+      v=list.length?sr/list.length:0;txt=String(sr);
     }
     if(n.t==="hub"&&n.g.track&&!specBoth()&&n.g.track!==track)off=true;
     var frac=Math.max(0,Math.min(1,v/5));
@@ -381,9 +368,7 @@ function render(){
     o.rect.setAttribute("y",n.y+n.r-2*n.r*frac);
     o.fl.setAttribute("fill",col);o.bg.setAttribute("stroke",col);
     o.val.textContent=txt;
-    o.g.classList.toggle("off",off&&!(n.t==="skill"&&isOff(n.sk)));
-    o.g.classList.toggle("disabled",n.t==="skill"&&isOff(n.sk));
-    o.g.classList.toggle("locked",lockTrees&&n.g&&!n.g.base);
+    o.g.classList.toggle("off",off);
     o.g.classList.toggle("sel",n.id===sel);
   });
 }
@@ -406,9 +391,6 @@ function flash(m){footEl.textContent=m;clearTimeout(footT);footT=setTimeout(func
 function bind(){
   Array.prototype.forEach.call(B.querySelectorAll("li[data-id]"),function(li){
     li.addEventListener("click",function(){pick(li.getAttribute("data-id"));});});
-  Array.prototype.forEach.call(B.querySelectorAll("button[data-set]"),function(b){
-    b.addEventListener("click",function(){
-      var k=b.getAttribute("data-key");my[k]=+b.getAttribute("data-set");save();panelSkill(SK[k]);render();});});
 }
 function ladder(s){
   var h='<div class="ladder">';
@@ -422,14 +404,12 @@ function scaleBlock(){
 }
 function panelSkill(s){
   setEdit();K.textContent=s.g.short;T.textContent=s.n;Dd.textContent=s.d||"";
-  var r=req(s),m=lvl(s),h=ladder(s);
-  h+='<h3>Мой уровень</h3><div class="setter">';
-  for(var i=0;i<=5;i++)h+='<button data-set="'+i+'" data-key="'+s.key+'" class="'+(m===i?"act":"")+'">'+i+'</button>';
+  var r=req(s),h=ladder(s);
   var tOff=trackOff(s);
-  h+='</div><div class="gapline'+(tOff?" muted":(m>=r?" done":""))+'">'+
-     (tOff?"На грейде «"+GRADES[G].s+"» в грейд идёт только выбранный трек. Этот навык — трек «"+TRACKN[s.g.track]+"».":r===0?"На грейде «"+GRADES[G].s+"» не требуется.":
-      m>=r?"Требование грейда «"+GRADES[G].s+"» закрыто: нужно "+r+", есть "+m+".":
-      "До грейда «"+GRADES[G].s+"» не хватает "+(r-m)+" "+(r-m===1?"пункта":"пунктов")+": нужно "+r+", есть "+m+".")+'</div>';
+  if(tOff||r===0){
+    h+='<div class="gapline muted">'+
+       (tOff?"На грейде «"+GRADES[G].s+"» в грейд идёт только выбранный трек. Этот навык — трек «"+TRACKN[s.g.track]+"».":"На грейде «"+GRADES[G].s+"» не требуется.")+'</div>';
+  }
   if(s.sub&&s.sub.length){
     h+='<h3>Из чего состоит</h3><ul>'+
       s.sub.map(function(x){return '<li style="border-color:'+gcol(s.g.gi)+';cursor:default">'+x+'</li>';}).join('')+
@@ -441,13 +421,12 @@ function panelSkill(s){
   B.innerHTML=h+scaleBlock();bind();
 }
 function panelGroup(gi){
-  var g=GROUPS[gi],list=vis(g.skills),sr=0,sm=0;
-  active(g.skills).forEach(function(s){sr+=req(s);sm+=Math.min(lvl(s),req(s));});
+  var g=GROUPS[gi],list=vis(g.skills),sr=0;
+  active(g.skills).forEach(function(s){sr+=req(s);});
   setEdit();K.textContent="Группа навыков · "+GRADES[G].s;T.textContent=g.short;Dd.textContent=g.desc||"";
   var h='';
   if(g.base){
-    h+='<div class="gapline'+(mine?(baseClosed()?" done":""):" muted")+'">Фундамент: пока каждый навык базы не доведён до уровня джуна, ветки закрыты.'+
-       (mine?(baseClosed()?' База закрыта.':' База не закрыта.'):'')+'</div>';
+    h+='<div class="gapline muted">Фундамент: пока каждый навык базы не доведён до уровня джуна, ветки закрыты.</div>';
   }
   if(g.track){
     var both=GRADES.filter(function(x){return x.spec!=="track";}).map(function(x){return x.s;}).join(", ");
@@ -455,37 +434,22 @@ function panelGroup(gi){
     h+='<div class="gapline muted">Специализация «'+TRACKN[g.track]+'». Обязательна на грейдах: '+both+'. На грейдах '+tr+' — только если выбран этот трек.'+
        (trackOff(g.skills[0])?' Сейчас выбран другой трек, ветка в грейд не идёт.':'')+'</div>';
   }
-  h+='<h3>Сумма требований грейда: '+sr+(mine?" · закрыто "+sm:"")+'</h3><ul>';
+  h+='<h3>Сумма требований грейда: '+sr+'</h3><ul>';
   if(!list.length)h+='<li style="cursor:default">В ветке не осталось навыков.</li>';
   list.slice().sort(function(a,b){return req(b)-req(a);}).forEach(function(s){
-    var r=req(s),m=lvl(s);
-    if(isOff(s)){h+='<li data-id="'+s.key+'" style="color:var(--faint)">'+s.n+'<b style="font-weight:400">выкл</b></li>';return;}
-    h+='<li data-id="'+s.key+'" style="border-color:'+(r===0?"var(--hair)":gcol(gi))+'">'+s.n+
-       '<b style="color:'+(mine?(m>=r?"var(--ok)":"var(--lack)"):"inherit")+'">'+(mine?m+"/"+r:r)+'</b></li>';});
+    var r=req(s);
+    h+='<li data-id="'+s.key+'" style="border-color:'+(r===0?"var(--hair)":gcol(gi))+'">'+s.n+'<b>'+r+'</b></li>';});
   h+='</ul>';
   B.innerHTML=h;bind();
 }
 function panelCore(){
-  var gr=GRADES[G],list=active(ALL),sr=0,sm=0,grown=[];
-  list.forEach(function(s){sr+=req(s);sm+=Math.min(lvl(s),req(s));
-    if(G>0&&req(s)>req(s,G-1))grown.push(s);});
+  var gr=GRADES[G],list=active(ALL),sr=0,grown=[];
+  list.forEach(function(s){sr+=req(s);if(G>0&&req(s)>req(s,G-1))grown.push(s);});
   setEdit();K.textContent="Ядро";T.textContent=CORE.name;Dd.textContent=CORE.desc;
   var specLine=specBoth()?"Специализации: обязательны обе — классический веб и игры.":"Специализация: в грейд идёт выбранный трек — «"+TRACKN[track]+"».";
   var h='<div class="gradecard"><div class="kind">Грейд '+(G+1)+' из '+GRADES.length+'</div>'+
         '<h4>'+gr.n+'</h4><p>'+gr.d+'</p></div>';
   h+='<h3>Сумма требований: '+sr+' пунктов на '+list.length+' навыков</h3><div class="gapline muted">'+specLine+'</div>';
-  if(mine&&!baseClosed())h+='<div class="gapline">База не закрыта — ветки заблокированы. Начни с базовых навыков.</div>';
-  if(mine){
-    var lack=list.filter(function(s){return lvl(s)<req(s);});
-    h+='<div class="gapline'+(lack.length?"":" done")+'">'+
-       (lack.length?"Закрыто "+sm+" из "+sr+" пунктов. Не дотягивают "+lack.length+" навыков.":"Грейд закрыт полностью.")+'</div>';
-    if(lack.length){
-      h+='<h3>Где разрыв больше всего</h3><ul>';
-      lack.sort(function(a,b){return (req(b)-lvl(b))-(req(a)-lvl(a));}).slice(0,8).forEach(function(s){
-        h+='<li data-id="'+s.key+'" style="border-color:var(--lack)">'+s.n+'<b>'+lvl(s)+'/'+req(s)+'</b><span>'+s.g.short+'</span></li>';});
-      h+='</ul>';
-    }
-  }
   if(G>0){
     h+='<h3>Что добавляет этот грейд к «'+GRADES[G-1].s+'»</h3><ul>';
     grown.sort(function(a,b){return (req(b)-req(b,G-1))-(req(a)-req(a,G-1));}).forEach(function(s){
@@ -498,8 +462,6 @@ function panelCore(){
   h+='</ul>';
   B.innerHTML=h+scaleBlock();bind();
 }
-document.getElementById("mine").onclick=function(){mine=!mine;this.classList.toggle("act",mine);save();pick(sel);};
-document.getElementById("growth").onclick=function(){growth=!growth;this.classList.toggle("act",growth);render();};
 var q=document.getElementById("q");
 function applySearch(){
   var v=q.value.trim().toLowerCase();
@@ -586,7 +548,6 @@ svg.addEventListener("pointerup",up);svg.addEventListener("pointercancel",up);
 document.getElementById("fit").onclick=function(){k=1;tx=0;ty=0;apply();};
 document.getElementById("fit").ondblclick=initialView;
 window.addEventListener("resize",apply);
-document.getElementById("mine").classList.toggle("act",mine);
 layoutPanel();build();paintGrades();paintTracks();initialView();pick("core");
 })();
 </script>
